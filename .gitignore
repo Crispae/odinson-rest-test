@@ -17,3 +17,5 @@ Makefile
 .metals/
 
 docs/api/**
+
+.bsp

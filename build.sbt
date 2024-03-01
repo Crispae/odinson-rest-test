@@ -1,6 +1,4 @@
 import sbtassembly.MergeStrategy
-import com.typesafe.sbt.packager.docker.{ DockerChmodType }
-
 
 
 // use commit hash as the version
@@ -92,34 +90,12 @@ lazy val buildInfoSettings = Seq(
   buildInfoKeys := Seq[BuildInfoKey](
     "name" -> "odinson-rest",
     version, scalaVersion, sbtVersion, scalacOptions, libraryDependencies,
-    "gitCurrentBranch" -> { git.gitCurrentBranch.value },
-    "gitHeadCommit" -> { git.gitHeadCommit.value.getOrElse("") },
-    "gitHeadCommitDate" -> { git.gitHeadCommitDate.value.getOrElse("") },
-    "gitUncommittedChanges" -> { git.gitUncommittedChanges.value }
   )
 )
 
-val gitDockerTag = settingKey[String]("Git commit-based tag for docker")
-ThisBuild / gitDockerTag := {
-  val shortHash: String = git.gitHeadCommit.value.get.take(7)
-  val uncommittedChanges: Boolean = (git.gitUncommittedChanges).value
-  s"""${shortHash}${if (uncommittedChanges) "-DIRTY" else ""}"""
-}
 
 lazy val packagerSettings = {
   Seq(
-    // see https://www.scala-sbt.org/sbt-native-packager/formats/docker.html
-    dockerUsername := Some("lumai"),
-    dockerAliases ++= Seq(
-      dockerAlias.value.withTag(Option("latest")),
-      dockerAlias.value.withTag(Option(gitDockerTag.value)),
-      // see https://github.com/sbt/sbt-native-packager/blob/master/src/main/scala/com/typesafe/sbt/packager/docker/DockerAlias.scala
-    ),
-    Docker / daemonUser  := "odinson",
-    Docker / packageName := "odinson-rest-api",
-    dockerBaseImage := "eclipse-temurin:11-jre-focal", // arm46 and amd64 compat
-    Docker / maintainer := "Gus Hahn-Powell <ghp@lum.ai>",
-    Docker / dockerExposedPorts := Seq(9000),
     Universal / javaOptions ++= Seq(
       "-J-Xmx4G",
       // avoid writing a PID file
@@ -129,27 +105,16 @@ lazy val packagerSettings = {
       // NOTE: bind mount odison dir to /data/odinson
       //"-Dodinson.dataDir=/app/data/odinson",
       // timeouts
-      "-Dplay.server.akka.requestTimeout=infinite",
+      "-Dplay.server.akka.requestTimeout=900s",
       //"play.server.akka.terminationTimeout=10s",
       //"-Dplay.server.http.idleTimeout=2400s"
     ),
-    dockerEnvVars ++= Map(
-      "APP_VERSION" -> scala.util.Properties.envOrElse("APP_VERSION", "???"),
-      "APPLICATION_SECRET" -> "this-is-not-a-secure-key-please-change-me",
-      // NOTE: bind mount odinson dir to /data/odinson
-      "ODINSON_DATA_DIR" -> "/app/data/odinson",
-      // token attributes that should be searchable
-      "ODINSON_TOKEN_ATTRIBUTES" -> "raw,word,norm,lemma,tag,chunk,entity,incoming,outgoing",
-      // NOTE: the expected min. RAM requirements
-      "_JAVA_OPTIONS" -> "-Xmx2g -Dfile.encoding=UTF-8 -Dplay.server.pidfile.path=/dev/null"
-    )
   )
 }
 
 lazy val root = (project in file("."))
   .enablePlugins(PlayScala)
   .enablePlugins(BuildInfoPlugin)
-  .enablePlugins(DockerPlugin)
   .settings(commonSettings)
   .settings(packagerSettings)
   .settings(sharedDeps)
@@ -162,7 +127,7 @@ lazy val root = (project in file("."))
     // these are used by the sbt web task
     PlayKeys.devSettings ++= Seq(
       "play.secret.key" -> "odinson-rest-api-is-not-production-ready",
-      "play.server.akka.requestTimeout" -> "infinite",
+      "play.server.akka.requestTimeout" -> "900 seconds",
       //"play.server.akka.terminationTimeout" -> "10 seconds",
       "play.server.http.idleTimeout" -> "2400 seconds"
     )
@@ -182,7 +147,3 @@ cp := {
 }
 lazy val web = taskKey[Unit]("Launches the webapp in dev mode.")
 web := (root / Compile / run).toTask("").value
-
-addCommandAlias("dockerfile", ";docker:stage")
-addCommandAlias("dockerize", ";docker:publishLocal")
-addCommandAlias("documentize", ";clean;doc;cp")
